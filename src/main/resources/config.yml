@@ -1,0 +1,10 @@
+# Manzoi Death Message v1.0.0
+# @author     ucchy
+# @license    GPLv3
+# @copyright  Copyright ucchy 2013
+
+# Output to server.log
+loggingDeathMessage: false
+
+# Suppress death message exclude OPs.
+suppressDeathMessage: false

@@ -1,0 +1,5 @@
+name: ManzoiDeathMessage
+main: com.github.ucchyocean.mdm.ManzoiDeathMessage
+version: 1.0.0
+author: ucchy
+description: Death Message Customize Plugin for Manzoi Server.
