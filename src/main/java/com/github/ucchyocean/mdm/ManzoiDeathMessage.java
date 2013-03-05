@@ -173,7 +173,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
                 if (cause.getCause() == DamageCause.FIRE_TICK) {
                     deathMessage = getMessage("fire");
                 } else {
-                    deathMessage = getMessage(cause.getCause().toString());
+                    deathMessage = getMessage(cause.getCause().toString().toLowerCase());
                 }
             }
         }
