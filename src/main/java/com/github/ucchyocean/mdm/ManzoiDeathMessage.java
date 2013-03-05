@@ -75,7 +75,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
         // 設定の取得
         FileConfiguration config = getConfig();
 
-        loggingDeathMessage = config.getBoolean("loggingDeathMessage", false);
+        loggingDeathMessage = config.getBoolean("loggingDeathMessage", true);
         suppressDeathMessage = config.getBoolean("suppressDeathMessage", true);
     }
 
@@ -166,7 +166,6 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
                 else {
                     // 直接 getMessage メソッドを呼ぶ
                     deathMessage = getMessage(killer.getType().getName().toLowerCase());
-                    getLogger().info("else entity message!! " + killer.getType().getName());
                 }
             }
             // エンティティ以外に倒されたメッセージは別に設定

@@ -4,7 +4,7 @@
 # @copyright  Copyright ucchy 2013
 
 # Output to server.log
-loggingDeathMessage: false
+loggingDeathMessage: true
 
 # Suppress death message exclude OPs.
-suppressDeathMessage: false
+suppressDeathMessage: true
