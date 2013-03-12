@@ -9,6 +9,7 @@ import java.io.File;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Arrow;
@@ -17,6 +18,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Skeleton;
+import org.bukkit.entity.ThrownPotion;
 import org.bukkit.entity.Wolf;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -25,6 +27,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -36,6 +39,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
 
     private static boolean loggingDeathMessage;
     private static boolean suppressDeathMessage;
+    private static boolean prefixWorld;
 
     /**
      * プラグイン有効時に呼び出されるメソッド
@@ -77,6 +81,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
 
         loggingDeathMessage = config.getBoolean("loggingDeathMessage", true);
         suppressDeathMessage = config.getBoolean("suppressDeathMessage", true);
+        prefixWorld = config.getBoolean("prefixWorld", false);
     }
 
     /**
@@ -88,7 +93,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
 
         File file = new File(getDataFolder(), "messages.yml");
         YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
-        return config.getString(cause, cause + "(%p_%k_%i_%o)");
+        return config.getString(cause, "&e" + cause + "(%p_%k_%i_%o)");
     }
 
     /**
@@ -118,7 +123,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
 
                 // エンティティの型チェック 特殊な表示の仕方が必要
                 if (killer instanceof Player){
-                    // この辺に倒したプレイヤー名取得
+                    // 倒したプレイヤー名取得
                     Player killerP = (Player)killer;
                     //killerが持ってたアイテム
                     ItemStack hand = killerP.getItemInHand();
@@ -139,9 +144,10 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
                     deathMessage = getMessage("tamewolf");
                     deathMessage = deathMessage.replace("%o", tamer);
                 }
-                // プレイヤーが打った矢
-                else if (killer instanceof Arrow && ((Arrow)killer).getShooter() instanceof LivingEntity) {
-                    LivingEntity shooter = ((Arrow)killer).getShooter();
+                // 打たれた矢
+                else if (killer instanceof Arrow) {
+                    Arrow arrow = (Arrow)killer;
+                    LivingEntity shooter = arrow.getShooter();
                     String killerName;
                     if ( shooter instanceof Player ) {
                         killerName = ((Player)shooter).getName();
@@ -159,7 +165,11 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
                     // 投げたプレイヤー取得
                     Player sh = (Player) ((Projectile)killer).getShooter();
 
+                    if ( killer instanceof ThrownPotion ) {
+                        deathMessage = getMessage("potion");
+                    } else {
                     deathMessage = getMessage("throw");
+                    }
                     deathMessage = deathMessage.replace("%k", sh.getName());
                 }
                 // そのほかのMOBは直接設定ファイルから取得
@@ -184,6 +194,12 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
         // カラーコードを置き換える
         deathMessage = Utility.replaceColorCode(deathMessage);
 
+        if ( prefixWorld ) {
+            // ワールド名を頭につける
+            World world = deader.getWorld();
+            deathMessage = "[" + world.getName() + "] " + deathMessage;
+        }
+
         if ( loggingDeathMessage ) {
             // ロギング
             getLogger().info(ChatColor.stripColor(deathMessage));
@@ -203,4 +219,25 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
             event.setDeathMessage(deathMessage);
         }
     }
+
+    /**
+     * コマンドが実行されたときに呼び出されるメソッド
+     * @param event
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        // NOTE: AdminCmd など、killコマンドの実行時に、ダメージ原因（DamageCause）を設定しない
+        //       お行儀の悪い子が多いので、プレイヤーコマンドに介在して、
+        //       DamageCause を設定する必要がある。
+        // たぶん、Essentials の killコマンドも、DamageCauseを設定していない。公式は設定する。
+
+        // killコマンドではないなら、用は無いので、終了する。
+        if ( !(event.getMessage().equalsIgnoreCase("/kill")) ) {
+            return;
+        }
+
+        // killコマンドを実行された場合は、DamageCause.SUICIDEを設定する
+        Player player = event.getPlayer();
+        player.setLastDamageCause(new EntityDamageEvent(player, DamageCause.SUICIDE, 100));
+}
 }
