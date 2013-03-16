@@ -1,0 +1,13 @@
+# Manzoi Death Message v1.2.0
+# @author     ucchy
+# @license    GPLv3
+# @copyright  Copyright ucchy 2013
+
+# Output to server.log
+loggingDeathMessage: true
+
+# Suppress death message exclude OPs.
+suppressDeathMessage: true
+
+# Append world name to prefix.
+prefixWorld: false
