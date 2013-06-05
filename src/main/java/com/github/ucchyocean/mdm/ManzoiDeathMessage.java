@@ -1,17 +1,12 @@
 /*
- * @author     ucchy
+ * @author     tsuttsu305, ucchy
  * @license    GPLv3
  * @copyright  Copyright ucchy 2013
+ * このソースコードは、tsuttsu305氏のリポジトリからフォークさせていただきました。感謝。
  */
 package com.github.ucchyocean.mdm;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.jar.JarFile;
-import java.util.zip.ZipEntry;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -19,12 +14,14 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Arrow;
+import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Skeleton;
 import org.bukkit.entity.ThrownPotion;
+import org.bukkit.entity.Witch;
 import org.bukkit.entity.Wolf;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -34,6 +31,8 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -91,7 +90,7 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
         prefixWorld = config.getBoolean("prefixWorld", false);
 
         // メッセージのデフォルトを、Jarの中から読み込む
-        defaultMessages = loadDefaultMessages();
+        defaultMessages = Utility.loadYamlFromJar(getFile(), "messages.yml");
     }
 
     /**
@@ -110,6 +109,37 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
     }
 
     /**
+     * プレイヤーがサーバーに参加したときに呼び出されるメソッド
+     * @param event プレイヤー参加イベント
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+
+        // メッセージを設定する
+        // 初参加なら、初参加メッセージを流す
+        String message;
+        if ( event.getPlayer().hasPlayedBefore() )
+            message = getMessage("server_join").replace("%p", event.getPlayer().getName());
+        else
+            message = getMessage("server_join_first").replace("%p", event.getPlayer().getName());
+
+        event.setJoinMessage(Utility.replaceColorCode(message));
+
+    }
+
+    /**
+     * プレイヤーがサーバーから退出したときに呼び出されるメソッド
+     * @param event プレイヤー退出イベント
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerQuit(PlayerQuitEvent event) {
+
+        // メッセージを設定する
+        event.setQuitMessage(Utility.replaceColorCode(
+                getMessage("server_quit").replace("%p", event.getPlayer().getName())));
+    }
+
+    /**
      * プレイヤーが死亡したときに呼び出されるメソッド
      * @param event プレイヤー死亡イベント
      */
@@ -118,92 +148,104 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
 
         // プレイヤーとプレイヤーが最後に受けたダメージイベントを取得
         Player deader = event.getEntity();
-        final EntityDamageEvent cause = event.getEntity().getLastDamageCause();
+        Player killer = deader.getKiller();
+        final EntityDamageEvent damageEvent = deader.getLastDamageCause();
 
         // 死亡メッセージ
         String deathMessage = event.getDeathMessage();
 
         // ダメージイベントを受けずに死んだ 死因不明
-        if (cause == null) {
+        if (damageEvent == null) {
             deathMessage = getMessage("unknown"); // Unknown
         }
         // ダメージイベントあり 原因によってメッセージ変更
         else {
             // ダメージイベントがEntityDamageByEntityEvent(エンティティが原因のダメージイベント)かどうかチェック
-            if (cause instanceof EntityDamageByEntityEvent) {
+            if (damageEvent instanceof EntityDamageByEntityEvent) {
                 // EntityDamageByEventのgetDamagerメソッドから原因となったエンティティを取得
-                Entity killer = ((EntityDamageByEntityEvent) cause).getDamager();
+                Entity damager = ((EntityDamageByEntityEvent) damageEvent).getDamager();
 
-                // エンティティの型チェック 特殊な表示の仕方が必要
-                if (killer instanceof Player){
-                    // 倒したプレイヤー名取得
-                    Player killerP = (Player)killer;
-                    //killerが持ってたアイテム
-                    ItemStack hand = killerP.getItemInHand();
-                    String handItemName = hand.getType().toString();
-                    if ( hand.getType().equals(Material.AIR) ) {
-                        handItemName = "素手";
-                    }
+                // プレイヤー間攻撃
+                if (damager instanceof Player) {
                     deathMessage = getMessage("pvp");
-
-                    deathMessage = deathMessage.replace("%k", killerP.getName());
-                    deathMessage = deathMessage.replace("%i", handItemName);
                 }
                 // 飼われている狼
-                else if (killer instanceof Wolf && ((Wolf) killer).isTamed()){
+                else if (damager instanceof Wolf && ((Wolf) damager).isTamed()){
                     //  飼い主取得
-                    String tamer = ((Wolf)killer).getOwner().getName();
-
-                    deathMessage = getMessage("tamewolf");
+                    String tamer = ((Wolf)damager).getOwner().getName();
+                    deathMessage = getDeathMessageByMob("tamewolf", (Wolf)damager);
                     deathMessage = deathMessage.replace("%o", tamer);
                 }
                 // 打たれた矢
-                else if (killer instanceof Arrow) {
-                    Arrow arrow = (Arrow)killer;
+                else if (damager instanceof Arrow) {
+                    Arrow arrow = (Arrow)damager;
                     LivingEntity shooter = arrow.getShooter();
-                    String killerName;
                     if ( shooter instanceof Player ) {
-                        killerName = ((Player)shooter).getName();
+                        deathMessage = getMessage("arrow");
                     } else if ( shooter instanceof Skeleton ) {
-                        killerName = "スケルトン";
+                        deathMessage = getDeathMessageByMob("skeleton", (Skeleton)shooter);
                     } else {
-                        killerName = "ディスペンサー";
+                        deathMessage = getMessage("dispenser");
                     }
-
-                    deathMessage = getMessage("arrow");
-                    deathMessage = deathMessage.replace("%k", killerName);
                 }
-                // プレイヤーが投げた雪玉など
-                else if (killer instanceof Projectile && ((Projectile) killer).getShooter() instanceof Player) {
+                // エンダーパールのテレポート時のダメージ
+                else if (damager instanceof EnderPearl) {
+                    deathMessage = getMessage("enderpearl");
+                }
+                // 投げたポーションや雪玉など
+                else if (damager instanceof Projectile) {
                     // 投げたプレイヤー取得
-                    Player sh = (Player) ((Projectile)killer).getShooter();
-
-                    if ( killer instanceof ThrownPotion ) {
+                    LivingEntity shooter = ((Projectile)damager).getShooter();
+                    if ( shooter instanceof Player ) {
+                        if ( damager instanceof ThrownPotion ) {
                         deathMessage = getMessage("potion");
                     } else {
                     deathMessage = getMessage("throw");
                     }
-                    deathMessage = deathMessage.replace("%k", sh.getName());
+                    } else if ( shooter instanceof Witch ) {
+                        deathMessage = getDeathMessageByMob("witch", shooter);
+                }
                 }
                 // そのほかのMOBは直接設定ファイルから取得
                 else {
                     // 直接 getMessage メソッドを呼ぶ
-                    deathMessage = getMessage(killer.getType().getName().toLowerCase());
+                    if ( damager instanceof LivingEntity ) {
+                        deathMessage = getDeathMessageByMob(
+                                damager.getType().getName().toLowerCase(),
+                                (LivingEntity)damager);
+                    } else {
+                        deathMessage = getMessage(
+                                damager.getType().getName().toLowerCase());
+                    }
                 }
             }
             // エンティティ以外に倒されたメッセージは別に設定
             else {
-                if (cause.getCause() == DamageCause.FIRE_TICK) {
-                    deathMessage = getMessage("fire");
-                } else {
-                    deathMessage = getMessage(cause.getCause().toString().toLowerCase());
-                }
+                String suffix = (killer == null) ? "" : "_killer";
+                deathMessage = getMessage(damageEvent.getCause().toString().toLowerCase() + suffix);
             }
         }
 
         // %p を、死亡した人の名前で置き換えする
         deathMessage = deathMessage.replace("%p", deader.getName());
 
+        // %k を、killerで置き換える
+        if ( deathMessage.contains("%k") ) {
+            if ( killer != null )
+                deathMessage = deathMessage.replace("%k", killer.getName());
+            else
+                deathMessage = deathMessage.replace("%k", "");
+        }
+
+        // %i を、killerが持ってたアイテムで置き換える
+        if ( deathMessage.contains("%i") ) {
+            ItemStack hand = killer.getItemInHand();
+            String handItemName = hand.getType().toString();
+            if ( hand.getType().equals(Material.AIR) ) {
+                handItemName = "素手";
+            }
+            deathMessage = deathMessage.replace("%i", handItemName);
+        }
         // カラーコードを置き換える
         deathMessage = Utility.replaceColorCode(deathMessage);
 
@@ -240,12 +282,11 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerCommandPreprocess(PlayerCommandPreprocessEvent event) {
         // NOTE: AdminCmd など、killコマンドの実行時に、ダメージ原因（DamageCause）を設定しない
-        //       お行儀の悪い子が多いので、プレイヤーコマンドに介在して、
+        //       お行儀の悪い子がいるので、プレイヤーコマンドに介在して、
         //       DamageCause を設定する必要がある。
-        // たぶん、Essentials の killコマンドも、DamageCauseを設定していない。公式は設定する。
 
         // killコマンドではないなら、用は無いので、終了する。
-        if ( !(event.getMessage().equalsIgnoreCase("/kill")) ) {
+        if ( !(event.getMessage().toLowerCase().startsWith("/kill")) ) {
             return;
         }
 
@@ -254,29 +295,20 @@ public class ManzoiDeathMessage extends JavaPlugin implements Listener {
         player.setLastDamageCause(new EntityDamageEvent(player, DamageCause.SUICIDE, 100));
     }
 
-    private YamlConfiguration loadDefaultMessages() {
+    /**
+     * 指定したMOBに関連したデスメッセージを取得する
+     * @param cause
+     * @param le
+     * @return
+     */
+    private String getDeathMessageByMob(String cause, LivingEntity le) {
 
-        YamlConfiguration messages = new YamlConfiguration();
-        try {
-            JarFile jarFile = new JarFile(getFile());
-            ZipEntry zipEntry = jarFile.getEntry("messages.yml");
-            InputStream inputStream = jarFile.getInputStream(zipEntry);
-            BufferedReader reader =
-                    new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
-            String line;
-            while ( (line = reader.readLine()) != null ) {
-                if ( line.contains(":") && !line.startsWith("#") ) {
-                    String key = line.substring(0, line.indexOf(":")).trim();
-                    String value = line.substring(line.indexOf(":") + 1).trim();
-                    if ( value.startsWith("'") && value.endsWith("'") )
-                        value = value.substring(1, value.length()-1);
-                    messages.set(key, value);
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+        String deathMessage = getMessage(cause);
+        String mobName = le.getCustomName();
+        if ( mobName == null ) {
+            mobName = "";
         }
 
-        return messages;
+        return deathMessage.replace("%n", mobName);
     }
 }
